@@ -48,9 +48,17 @@ function durationMs(task) {
   return Math.max(0, end - task.startedAt);
 }
 
+function dayBounds(dateStr) {
+  const start = parseDateOnly(dateStr);
+  return { start: start.getTime(), end: addDays(start, 1).getTime() };
+}
+
+function overlapMs(rangeStart, rangeEnd, dayStart, dayEnd) {
+  return Math.max(0, Math.min(rangeEnd, dayEnd) - Math.max(rangeStart, dayStart));
+}
+
 function daySegmentMs(task, dateStr) {
-  const dayStart = parseDateOnly(dateStr).getTime();
-  const dayEnd = dayStart + 86400000;
+  const { start: dayStart, end: dayEnd } = dayBounds(dateStr);
 
   // Manually edited task: attribute the edited total to the task's date.
   if (task.manualDurationMs != null) {
@@ -60,7 +68,7 @@ function daySegmentMs(task, dateStr) {
   // A restarted task keeps its previous tracked time and adds the new segment.
   if (task.accumulatedDurationMs != null) {
     const current = task.startedAt
-      ? Math.max(0, Math.min(task.stoppedAt || Date.now(), dayEnd) - Math.max(task.startedAt, dayStart))
+      ? overlapMs(task.startedAt, task.stoppedAt || Date.now(), dayStart, dayEnd)
       : 0;
     const previous = task.date === dateStr ? task.accumulatedDurationMs : 0;
     return previous + current;
@@ -68,10 +76,25 @@ function daySegmentMs(task, dateStr) {
 
   if (!task.startedAt) return 0;
 
-  const start = task.startedAt;
-  const end = task.stoppedAt || Date.now();
+  return overlapMs(task.startedAt, task.stoppedAt || Date.now(), dayStart, dayEnd);
+}
 
-  return Math.max(0, Math.min(end, dayEnd) - Math.max(start, dayStart));
+function formatClockTime(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTaskTimeRange(task, dateStr) {
+  if (!task.startedAt) return "Logged";
+  const { start: dayStart, end: dayEnd } = dayBounds(dateStr);
+  const liveEnd = task.stoppedAt || Date.now();
+  const overlapStart = Math.max(task.startedAt, dayStart);
+  const overlapEnd = Math.min(liveEnd, dayEnd);
+  if (overlapEnd <= overlapStart) return "Logged";
+  const startLabel = formatClockTime(overlapStart);
+  const now = Date.now();
+  const stillInThisDay = task.stoppedAt == null && task.manualDurationMs == null && now >= dayStart && now < dayEnd;
+  const endLabel = stillInThisDay ? "Running" : formatClockTime(overlapEnd);
+  return `${startLabel} → ${endLabel}`;
 }
 
 function mondayOf(date) {

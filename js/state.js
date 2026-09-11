@@ -2,6 +2,8 @@ const state = {
   tasks: [],
   editingTaskId: null,
   confirmCleanup: null,
+  dbReady: false,
+  startInFlight: false,
   eod: {
     date: null,
     dirty: false,
@@ -10,6 +12,10 @@ const state = {
   eodDrafts: {}
 };
 
+function isRunningTask(task) {
+  return Boolean(task) && task.stoppedAt == null && task.manualDurationMs == null;
+}
+
 function runningTask() {
-  return state.tasks.find(t => t.stoppedAt == null && t.manualDurationMs == null) || null;
+  return state.tasks.find(isRunningTask) || null;
 }

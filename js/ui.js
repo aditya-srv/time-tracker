@@ -80,7 +80,8 @@ function askConfirm({ title, message, okLabel = "OK", danger = false, hideCancel
 function recentNames() {
   const seen = new Set();
   const names = [];
-  const sorted = [...state.tasks].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  const recency = t => Math.max(t.stoppedAt || 0, t.startedAt || 0);
+  const sorted = [...state.tasks].sort((a, b) => recency(b) - recency(a));
   for (const t of sorted) {
     if (!t.name || seen.has(t.name)) continue;
     seen.add(t.name);
@@ -90,12 +91,30 @@ function recentNames() {
   return names;
 }
 
+function taskVisibleOnDate(task, date) {
+  return task.date === date || daySegmentMs(task, date) > 0;
+}
+
+function syncStorageControls(running) {
+  const ready = state.dbReady;
+  $("taskName").disabled = !ready;
+  $("taskHours").disabled = !ready;
+  $("taskMinutes").disabled = !ready;
+  $("logBtn").disabled = !ready;
+  $("startBtn").disabled = !ready || Boolean(running) || state.startInFlight;
+  $("clearDbBtn").disabled = !ready;
+  $("downloadDbBtn").disabled = !ready;
+  $("uploadDbBtn").disabled = !ready;
+  $("loadEodBtn").disabled = !ready;
+}
+
 function render() {
+  flushEodHoursInput();
   const date = selectedDate();
   const today = localDateString();
   const visible = state.tasks
-    .filter(t => daySegmentMs(t, date) > 0)
-    .sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+    .filter(t => taskVisibleOnDate(t, date))
+    .sort((a, b) => (a.startedAt || a.stoppedAt || 0) - (b.startedAt || b.stoppedAt || 0));
 
   const dayMs = dayTotalMs(state.tasks, date);
   const weekMs = weekTotalMs(state.tasks, date);
@@ -110,7 +129,7 @@ function render() {
 
   const running = runningTask();
   $("startControls").classList.toggle("is-tracking", Boolean(running));
-  $("startBtn").disabled = Boolean(running);
+  syncStorageControls(running);
   $("startBtn").textContent = running ? "Task Running..." : "Start Task";
   $("startBtn").title = running ? `Stop "${running.name}" before starting another task.` : "";
 
@@ -149,6 +168,18 @@ function renderRecent() {
       ${escapeHtml(name)}
     </button>
   `).join("");
+  syncRecentChipState();
+}
+
+function syncRecentChipState() {
+  const el = $("recentTasks");
+  if (!el || el.hidden) return;
+  const blockStart = Boolean(runningTask()) && !hasDurationInput();
+  const title = blockStart ? "Stop the current task before starting another." : "";
+  for (const chip of el.querySelectorAll(".chip")) {
+    chip.disabled = blockStart;
+    chip.title = title;
+  }
 }
 
 function renderRunningHero(running) {
@@ -188,12 +219,10 @@ function renderTasks(visible, date, isBusy) {
   }
 
   $("taskList").innerHTML = visible.map(t => {
-    const isRunning = t.stoppedAt == null && t.manualDurationMs == null;
+    const isRunning = isRunningTask(t);
     const ms = daySegmentMs(t, date);
     const isManual = t.manualDurationMs != null;
-    const start = t.startedAt ? new Date(t.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Logged";
-    const end = t.stoppedAt ? new Date(t.stoppedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : (isRunning ? "Running" : "—");
-    const timeRange = t.startedAt ? `${start} → ${end}` : "Logged";
+    const timeRange = formatTaskTimeRange(t, date);
     const editable = t.manualDurationMs != null || t.stoppedAt != null;
 
     return `
@@ -379,6 +408,7 @@ function renderEodTable() {
 }
 
 async function loadEodFromDb() {
+  if (!state.dbReady) return;
   flushEodHoursInput();
   const date = selectedDate();
   state.tasks = await getAllTasks();
@@ -603,6 +633,30 @@ async function copyEodRows() {
   setTimeout(resetLabel, 1400);
 }
 
+function updateLiveEodHours() {
+  if (state.eod.dirty || !state.eod.date) return;
+  const date = state.eod.date;
+  if (date !== selectedDate()) return;
+
+  const fresh = buildEodRows(date);
+  const rows = state.eod.rows;
+  const structureChanged = fresh.length !== rows.length ||
+    fresh.some((row, i) => row.name !== rows[i].name || (rows[i].span || 1) !== 1);
+  if (structureChanged) {
+    state.eod.rows = fresh;
+    renderEodTable();
+    return;
+  }
+
+  for (let i = 0; i < fresh.length; i++) rows[i].hours = fresh[i].hours;
+  const active = document.activeElement;
+  for (const input of $("eodBody").querySelectorAll('input[data-field="hours"]')) {
+    if (input === active) continue;
+    input.value = formatQuarterHours(eodGroupHours(Number(input.dataset.index)));
+  }
+  updateEodTotal();
+}
+
 function updateLiveDurations() {
   const running = runningTask();
   if (!running) return;
@@ -632,6 +686,11 @@ function updateLiveDurations() {
 
   const taskBar = document.querySelector(`[data-task-bar="${running.id}"]`);
   if (taskBar) taskBar.style.width = `${workdayPct(daySegmentMs(running, date))}%`;
+
+  const listTime = listDur && listDur.parentElement && listDur.parentElement.querySelector(".task-time");
+  if (listTime) listTime.textContent = formatTaskTimeRange(running, date);
+
+  updateLiveEodHours();
 }
 
 function openEditModal(task) {

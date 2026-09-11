@@ -1,6 +1,28 @@
 async function refresh() {
+  if (!state.dbReady) return;
   state.tasks = await getAllTasks();
+  await persistStoppedExtraRunningTasks();
   render();
+}
+
+function stopExtraRunningTasks(tasks, stoppedAt) {
+  const running = tasks.filter(isRunningTask);
+  if (running.length <= 1) return false;
+  running.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  for (const task of running.slice(1)) task.stoppedAt = stoppedAt;
+  return true;
+}
+
+async function persistStoppedExtraRunningTasks() {
+  const extras = state.tasks.filter(isRunningTask)
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+    .slice(1);
+  if (!extras.length) return;
+  const stoppedAt = Date.now();
+  for (const task of extras) {
+    task.stoppedAt = stoppedAt;
+    await putTask(task);
+  }
 }
 
 function shiftSelectedDate(days) {
@@ -43,14 +65,22 @@ function resetTaskInputs() {
 }
 
 async function startTask(presetName) {
+  if (!state.dbReady) return;
+  if (hasDurationInput()) {
+    await logTask(presetName);
+    return;
+  }
+
   const name = (typeof presetName === "string" ? presetName : $("taskName").value).trim();
   if (!name) {
     markTaskInputError("taskName");
     return;
   }
 
-  const alreadyRunning = runningTask();
-  if (alreadyRunning) return;
+  if (state.startInFlight || runningTask()) return;
+
+  state.startInFlight = true;
+  $("startBtn").disabled = true;
 
   const task = {
     id: crypto.randomUUID(),
@@ -60,15 +90,26 @@ async function startTask(presetName) {
     stoppedAt: null,
     manualDurationMs: null
   };
+  state.tasks.push(task);
 
-  await putTask(task);
-  resetTaskInputs();
-  $("selectedDate").value = localDateString();
-  window.scrollTo({ top: 0 });
-  await refresh();
+  try {
+    await putTask(task);
+    resetTaskInputs();
+    $("selectedDate").value = localDateString();
+    window.scrollTo({ top: 0 });
+    await refresh();
+  } catch (err) {
+    state.tasks = state.tasks.filter(t => t.id !== task.id);
+    console.error(err);
+  } finally {
+    state.startInFlight = false;
+    syncStorageControls(runningTask());
+  }
 }
 
 async function logTask(presetName) {
+  if (!state.dbReady) return;
+
   const name = (typeof presetName === "string" ? presetName : $("taskName").value).trim();
   if (!name) {
     markTaskInputError("taskName");
@@ -81,6 +122,9 @@ async function logTask(presetName) {
     return;
   }
 
+  if (state.startInFlight) return;
+  state.startInFlight = true;
+
   const now = Date.now();
   const task = {
     id: crypto.randomUUID(),
@@ -91,9 +135,14 @@ async function logTask(presetName) {
     manualDurationMs: duration.ms
   };
 
-  await putTask(task);
-  resetTaskInputs();
-  await refresh();
+  try {
+    await putTask(task);
+    resetTaskInputs();
+    await refresh();
+  } finally {
+    state.startInFlight = false;
+    syncStorageControls(runningTask());
+  }
 }
 
 function submitTaskFromKeyboard() {
@@ -102,6 +151,7 @@ function submitTaskFromKeyboard() {
 }
 
 async function stopTask(id) {
+  if (!state.dbReady) return;
   const task = state.tasks.find(t => t.id === id);
   if (!task) return;
   task.stoppedAt = Date.now();
@@ -110,28 +160,35 @@ async function stopTask(id) {
 }
 
 async function restartTask(id) {
+  if (!state.dbReady) return;
   const task = state.tasks.find(t => t.id === id);
   if (!task) return;
+  if (state.startInFlight || runningTask()) return;
 
-  const alreadyRunning = runningTask();
-  if (alreadyRunning) return;
+  state.startInFlight = true;
+  $("startBtn").disabled = true;
 
   // Freeze the currently displayed total, then start a new timing segment.
   // Replace accumulated time instead of adding onto it. Adding would
   // double-count after an hours edit, because the edited value already
   // includes (or replaces) any previous accumulated duration.
+  // Keep task.date so previously tracked time stays on the original day.
   const previousDurationMs = durationMs(task);
 
   task.manualDurationMs = null;
   task.startedAt = Date.now();
   task.stoppedAt = null;
   task.accumulatedDurationMs = previousDurationMs;
-  task.date = localDateString(new Date());
 
-  await putTask(task);
-  $("selectedDate").value = localDateString();
-  window.scrollTo({ top: 0 });
-  await refresh();
+  try {
+    await putTask(task);
+    $("selectedDate").value = localDateString();
+    window.scrollTo({ top: 0 });
+    await refresh();
+  } finally {
+    state.startInFlight = false;
+    syncStorageControls(runningTask());
+  }
 }
 
 function editTask(id) {
@@ -147,6 +204,7 @@ function parseTimeField(value) {
 }
 
 async function saveEdit() {
+  if (!state.dbReady) return;
   const name = $("editName").value.trim();
   if (!name) {
     showEditError("Enter a task name.");
@@ -161,6 +219,13 @@ async function saveEdit() {
     return;
   }
 
+  const ms = hours * 3600000 + minutes * 60000;
+  if (ms <= 0) {
+    showEditError("Enter a duration greater than 0.");
+    $("editHours").focus();
+    return;
+  }
+
   const task = state.tasks.find(t => t.id === state.editingTaskId);
   if (!task) return;
 
@@ -168,7 +233,7 @@ async function saveEdit() {
 
   // Edited time replaces the entire tracked total, including any time
   // accumulated from earlier restart sessions.
-  task.manualDurationMs = hours * 3600000 + minutes * 60000;
+  task.manualDurationMs = ms;
   task.accumulatedDurationMs = null;
   task.stoppedAt = task.stoppedAt || Date.now();
 
@@ -178,6 +243,7 @@ async function saveEdit() {
 }
 
 async function removeTask(id) {
+  if (!state.dbReady) return;
   const task = state.tasks.find(t => t.id === id);
   if (!task) return;
   const ok = await askConfirm({
@@ -192,6 +258,7 @@ async function removeTask(id) {
 }
 
 async function clearDb() {
+  if (!state.dbReady) return;
   const ok = await askConfirm({
     title: "Clear all data",
     message: "Delete ALL tracked tasks from IndexedDB? This cannot be undone.",
@@ -208,6 +275,7 @@ function backupFilename() {
 }
 
 async function downloadDb() {
+  if (!state.dbReady) return;
   const tasks = await getAllTasks();
   const payload = {
     app: "task-tracker",
@@ -275,16 +343,18 @@ function parseBackup(raw) {
       accumulatedDurationMs
     });
   }
+  stopExtraRunningTasks(tasks, Date.now());
   return tasks;
 }
 
 function chooseBackupFile() {
+  if (!state.dbReady) return;
   $("uploadDbInput").value = "";
   $("uploadDbInput").click();
 }
 
 async function uploadDb(file) {
-  if (!file) return;
+  if (!file || !state.dbReady) return;
 
   let tasks;
   try {
@@ -311,7 +381,7 @@ async function uploadDb(file) {
   await refresh();
 }
 
-$("startBtn").addEventListener("click", () => startTask());
+$("startBtn").addEventListener("click", () => submitTaskFromKeyboard());
 $("logBtn").addEventListener("click", () => logTask());
 $("taskName").addEventListener("keydown", e => {
   if (e.key === "Enter") submitTaskFromKeyboard();
@@ -328,10 +398,12 @@ $("taskName").addEventListener("input", () => {
 $("taskHours").addEventListener("input", () => {
   $("taskHours").classList.remove("input-error");
   $("taskMinutes").classList.remove("input-error");
+  syncRecentChipState();
 });
 $("taskMinutes").addEventListener("input", () => {
   $("taskHours").classList.remove("input-error");
   $("taskMinutes").classList.remove("input-error");
+  syncRecentChipState();
 });
 $("selectedDate").addEventListener("change", render);
 $("prevDay").addEventListener("click", () => shiftSelectedDate(-1));
@@ -399,15 +471,20 @@ setInterval(updateLiveDurations, 1000);
 
 (async function init() {
   $("selectedDate").value = localDateString();
+  syncStorageControls(null);
   try {
     await openDb();
+    state.dbReady = true;
     await refresh();
   } catch (err) {
     console.error(err);
+    state.dbReady = false;
+    syncStorageControls(null);
     await askConfirm({
       title: "Storage unavailable",
       message: "Could not open IndexedDB in this browser.",
-      okLabel: "OK"
+      okLabel: "OK",
+      hideCancel: true
     });
   }
 })();
