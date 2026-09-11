@@ -101,11 +101,39 @@ function syncStorageControls(running) {
   $("taskHours").disabled = !ready;
   $("taskMinutes").disabled = !ready;
   $("logBtn").disabled = !ready;
+  $("logToggle").disabled = !ready;
   $("startBtn").disabled = !ready || Boolean(running) || state.startInFlight;
   $("clearDbBtn").disabled = !ready;
   $("downloadDbBtn").disabled = !ready;
   $("uploadDbBtn").disabled = !ready;
   $("loadEodBtn").disabled = !ready;
+}
+
+function isLogMode() {
+  return !$("durationFields").hidden;
+}
+
+function setLogMode(on) {
+  $("durationFields").hidden = !on;
+  $("logBtn").hidden = !on;
+  $("startBtn").hidden = on;
+  $("logToggle").textContent = on ? "Use timer" : "Log hours";
+  if (!on) {
+    $("taskHours").value = "";
+    $("taskMinutes").value = "";
+    $("taskHours").classList.remove("input-error");
+    $("taskMinutes").classList.remove("input-error");
+  }
+}
+
+function updateHeaderTotals(date, today) {
+  const dayMs = dayTotalMs(state.tasks, date);
+  const weekMs = weekTotalMs(state.tasks, date);
+  $("dayTotal").textContent = formatDuration(dayMs);
+  $("dayTotal").title = goalLabel(dayMs, 8);
+  $("weekTotal").textContent = formatDuration(weekMs);
+  $("weekTotal").title = goalLabel(weekMs, 48);
+  $("daySummaryLabel").textContent = date === today ? "today" : formatDate(date).split(",")[0];
 }
 
 function render() {
@@ -116,21 +144,13 @@ function render() {
     .filter(t => taskVisibleOnDate(t, date))
     .sort((a, b) => (a.startedAt || a.stoppedAt || 0) - (b.startedAt || b.stoppedAt || 0));
 
-  const dayMs = dayTotalMs(state.tasks, date);
-  const weekMs = weekTotalMs(state.tasks, date);
-  $("dayTotal").textContent = formatDuration(dayMs);
-  $("dayBar").style.width = `${workdayPct(dayMs)}%`;
-  $("dayMeta").textContent = goalLabel(dayMs, 8);
-  $("taskCount").textContent = visible.length;
-  $("weekTotal").textContent = formatDuration(weekMs);
-  $("weekBar").style.width = `${weekGoalPct(weekMs)}%`;
-  $("weekMeta").textContent = goalLabel(weekMs, 48);
+  updateHeaderTotals(date, today);
   $("dateTitle").textContent = formatDate(date);
 
   const running = runningTask();
   $("startControls").classList.toggle("is-tracking", Boolean(running));
   syncStorageControls(running);
-  $("startBtn").textContent = running ? "Task Running..." : "Start Task";
+  $("startBtn").textContent = running ? "Running…" : "Start";
   $("startBtn").title = running ? `Stop "${running.name}" before starting another task.` : "";
 
   const banner = $("viewingBanner");
@@ -139,47 +159,73 @@ function render() {
     banner.textContent = "";
   } else {
     banner.hidden = false;
-    banner.textContent = `Viewing ${formatDate(date)}. Start still tracks today. Logged hours are saved to this date.`;
+    banner.textContent = "Start still tracks today. Logged hours are saved to this date.";
   }
 
   const todayBtn = $("todayBtn");
+  todayBtn.hidden = date === today;
   todayBtn.disabled = date === today;
   todayBtn.classList.toggle("is-current", date === today);
 
-  renderRecent();
   renderRunningHero(running);
   renderTasks(visible, date, Boolean(running));
   renderWeek(date, today);
   syncAndRenderEod(date);
 }
 
-function renderRecent() {
-  const names = recentNames();
-  const el = $("recentTasks");
+function matchingRecentNames() {
+  const q = $("taskName").value.trim().toLowerCase();
+  return recentNames().filter(name => {
+    const lower = name.toLowerCase();
+    return !q || (lower.includes(q) && lower !== q);
+  });
+}
+
+function showNameSuggest() {
+  const el = $("nameSuggest");
+  if (!el) return;
+  const names = matchingRecentNames();
   if (!names.length) {
     el.hidden = true;
     el.innerHTML = "";
     return;
   }
-
   el.hidden = false;
-  el.innerHTML = `<span class="recent-label">Recent</span>` + names.map(name => `
-    <button type="button" class="chip" data-name="${escapeHtml(name)}">
+  el.innerHTML = names.map((name, i) => `
+    <button type="button" class="suggest-item${i === 0 ? " is-active" : ""}" data-name="${escapeHtml(name)}">
       ${escapeHtml(name)}
     </button>
   `).join("");
-  syncRecentChipState();
 }
 
-function syncRecentChipState() {
-  const el = $("recentTasks");
-  if (!el || el.hidden) return;
-  const blockStart = Boolean(runningTask()) && !hasDurationInput();
-  const title = blockStart ? "Stop the current task before starting another." : "";
-  for (const chip of el.querySelectorAll(".chip")) {
-    chip.disabled = blockStart;
-    chip.title = title;
-  }
+function hideNameSuggest() {
+  const el = $("nameSuggest");
+  if (!el) return;
+  el.hidden = true;
+  el.innerHTML = "";
+}
+
+function applySuggestedName(name) {
+  $("taskName").value = name;
+  $("taskName").classList.remove("input-error");
+  hideNameSuggest();
+  if (isLogMode()) $("taskHours").focus();
+  else $("taskName").focus();
+}
+
+function moveSuggestHighlight(delta) {
+  const items = [...$("nameSuggest").querySelectorAll(".suggest-item")];
+  if (!items.length) return;
+  const current = items.findIndex(el => el.classList.contains("is-active"));
+  const next = (current + delta + items.length) % items.length;
+  items.forEach(el => el.classList.remove("is-active"));
+  items[next].classList.add("is-active");
+  items[next].scrollIntoView({ block: "nearest" });
+}
+
+function activeSuggestedName() {
+  const el = $("nameSuggest").querySelector(".suggest-item.is-active");
+  return el ? el.dataset.name : "";
 }
 
 function renderRunningHero(running) {
@@ -209,8 +255,10 @@ function renderRunningHero(running) {
 }
 
 function renderTasks(visible, date, isBusy) {
+  const list = $("taskList");
   if (!visible.length) {
-    $("taskList").innerHTML = `
+    list.classList.add("is-empty");
+    list.innerHTML = `
       <div class="empty">
         <strong>No tracked work for this date.</strong>
         Start a task or log hours above.
@@ -218,31 +266,34 @@ function renderTasks(visible, date, isBusy) {
     return;
   }
 
-  $("taskList").innerHTML = visible.map(t => {
+  list.classList.remove("is-empty");
+  list.innerHTML = visible.map(t => {
     const isRunning = isRunningTask(t);
     const ms = daySegmentMs(t, date);
     const isManual = t.manualDurationMs != null;
     const timeRange = formatTaskTimeRange(t, date);
     const editable = t.manualDurationMs != null || t.stoppedAt != null;
+    const menuItems = [
+      !isRunning ? `<button type="button" data-action="restart" data-id="${t.id}" ${isBusy ? "disabled" : ""}>Restart</button>` : "",
+      editable ? `<button type="button" data-action="edit" data-id="${t.id}">Edit</button>` : "",
+      `<button type="button" class="danger quiet" data-action="delete" data-id="${t.id}">Delete</button>`
+    ].filter(Boolean).join("");
 
     return `
-      <div class="task ${isRunning ? "running" : ""}">
-        <div class="task-main">
-          <div>
-            <div class="task-name">${escapeHtml(t.name)}
-              ${isRunning ? `<span class="status">● Running</span>` : ""}
-              ${isManual ? `<span class="badge">Manual</span>` : ""}
-            </div>
-            <div class="task-time">${timeRange}</div>
+      <div class="task ${isRunning ? "running" : ""} ${ms < 60000 && !isRunning ? "is-zero" : ""}">
+        <div class="task-copy">
+          <div class="task-name">
+            <span class="task-name-text">${escapeHtml(t.name)}</span>
+            ${isRunning ? `<span class="status">Running</span>` : ""}
+            ${isManual ? `<span class="badge">Manual</span>` : ""}
           </div>
-          <div class="task-duration" data-running-id="${isRunning ? t.id : ""}">${isRunning ? formatClock(ms) : formatDuration(ms)}</div>
+          <div class="task-time" data-running-time="${isRunning ? t.id : ""}">${timeRange}</div>
         </div>
-        <div class="task-bar ${ms === 0 ? "is-empty" : ""}"><span data-task-bar="${t.id}" style="width:${workdayPct(ms)}%"></span></div>
-        <div class="task-actions">
-          ${!isRunning ? `<button type="button" class="small primary" data-action="restart" data-id="${t.id}" ${isBusy ? "disabled" : ""}>Restart</button>` : ""}
-          ${editable ? `<button type="button" class="small ghost" data-action="edit" data-id="${t.id}">Edit</button>` : ""}
-          <button type="button" class="small danger quiet" data-action="delete" data-id="${t.id}">Delete</button>
-        </div>
+        <div class="task-duration" data-running-id="${isRunning ? t.id : ""}">${isRunning ? formatClock(ms) : formatDuration(ms)}</div>
+        <details class="task-more">
+          <summary aria-label="Task actions">⋯</summary>
+          <div class="task-menu-pop">${menuItems}</div>
+        </details>
       </div>
     `;
   }).join("");
@@ -262,7 +313,8 @@ function renderWeek(selected, today) {
     cards.push(`
       <button type="button" class="week-card ${isSelected ? "selected" : ""} ${ms === 0 ? "zero" : ""}" data-date="${ds}">
         <div class="week-day">
-          ${d.toLocaleDateString(undefined, { weekday: "long" })}
+          ${d.toLocaleDateString(undefined, { weekday: "short" })}
+          <span class="week-date">${d.getDate()}</span>
           ${isToday ? `<span class="week-tag">Today</span>` : ""}
         </div>
         <div class="week-hours" data-week-hours="${ds}">${formatDuration(ms)}</div>
@@ -326,6 +378,17 @@ function updateEodTotal() {
   $("eodTotal").textContent = formatQuarterHours(eodTotalHours());
 }
 
+function syncEodChrome() {
+  const reset = $("loadEodBtn");
+  const dirty = $("eodDirty");
+  const isDirty = Boolean(state.eod.dirty);
+  reset.hidden = !isDirty;
+  reset.disabled = !state.dbReady;
+  dirty.hidden = !isDirty;
+  $("eodSection").classList.toggle("is-open", !$("eodWrap").hidden);
+  $("eodToggle").setAttribute("aria-expanded", String(!$("eodWrap").hidden));
+}
+
 function persistEodDraft() {
   if (!state.eod.date) return;
   state.eodDrafts[state.eod.date] = {
@@ -339,6 +402,7 @@ function syncAndRenderEod(date) {
 
   if (state.eod.date === date && state.eod.dirty) {
     $("eodDateLabel").textContent = formatDate(date);
+    syncEodChrome();
     return;
   }
 
@@ -370,6 +434,7 @@ function renderEodTable() {
         <td colspan="2" class="eod-empty">No tasks for this date. Add a row to start the EOD table.</td>
       </tr>`;
     updateEodTotal();
+    syncEodChrome();
     return;
   }
 
@@ -378,7 +443,7 @@ function renderEodTable() {
       <td>
         <div class="eod-name">
           <input data-field="name" data-index="${index}" type="text" value="${escapeHtml(row.name)}" placeholder="Task name" autocomplete="off" />
-          <button type="button" class="small danger quiet" data-action="eod-delete" data-index="${index}" title="Remove row">×</button>
+          <button type="button" class="small danger quiet eod-row-del" data-action="eod-delete" data-index="${index}" title="Remove row">×</button>
         </div>
       </td>`;
 
@@ -405,6 +470,7 @@ function renderEodTable() {
   }).join("");
 
   updateEodTotal();
+  syncEodChrome();
 }
 
 async function loadEodFromDb() {
@@ -529,6 +595,7 @@ function onEodFieldInput(e) {
   const row = state.eod.rows[index];
   if (!row) return;
   state.eod.dirty = true;
+  syncEodChrome();
   if (input.dataset.field === "name") {
     row.name = input.value;
     persistEodDraft();
@@ -595,7 +662,7 @@ async function copyEodRows() {
   const text = eodPlainText();
   const html = `<!--StartFragment-->${eodHtmlTable()}<!--EndFragment-->`;
   const btn = $("copyEodBtn");
-  const resetLabel = () => { btn.textContent = "Copy rows"; };
+  const resetLabel = () => { btn.textContent = "Copy"; };
 
   if (!state.eod.rows.length) {
     btn.textContent = "Nothing to copy";
@@ -669,14 +736,7 @@ function updateLiveDurations() {
   const listDur = document.querySelector(`[data-running-id="${running.id}"]`);
   if (listDur) listDur.textContent = formatClock(daySegmentMs(running, date));
 
-  const dayMs = dayTotalMs(state.tasks, date);
-  const weekMs = weekTotalMs(state.tasks, date);
-  $("dayTotal").textContent = formatDuration(dayMs);
-  $("dayBar").style.width = `${workdayPct(dayMs)}%`;
-  $("dayMeta").textContent = goalLabel(dayMs, 8);
-  $("weekTotal").textContent = formatDuration(weekMs);
-  $("weekBar").style.width = `${weekGoalPct(weekMs)}%`;
-  $("weekMeta").textContent = goalLabel(weekMs, 48);
+  updateHeaderTotals(date, today);
 
   const todayHours = document.querySelector(`[data-week-hours="${today}"]`);
   const todayBar = document.querySelector(`[data-week-bar="${today}"]`);
@@ -684,10 +744,7 @@ function updateLiveDurations() {
   if (todayHours) todayHours.textContent = formatDuration(todayMs);
   if (todayBar) todayBar.style.width = `${workdayPct(todayMs)}%`;
 
-  const taskBar = document.querySelector(`[data-task-bar="${running.id}"]`);
-  if (taskBar) taskBar.style.width = `${workdayPct(daySegmentMs(running, date))}%`;
-
-  const listTime = listDur && listDur.parentElement && listDur.parentElement.querySelector(".task-time");
+  const listTime = document.querySelector(`[data-running-time="${running.id}"]`);
   if (listTime) listTime.textContent = formatTaskTimeRange(running, date);
 
   updateLiveEodHours();

@@ -11,102 +11,93 @@
 </head>
 <body>
 <div class="container">
-  <header class="header">
-    <h1>Task Tracker</h1>
-    <div class="subtitle">Track your work locally in IndexedDB. Nothing is sent to a server.</div>
-  </header>
+  <div class="sticky-stack">
+    <header class="header">
+      <h1 title="Work is stored only on this device.">Task Tracker</h1>
+      <div class="header-summary">
+        <span><strong id="dayTotal">0h 00m</strong> <span id="daySummaryLabel">today</span></span>
+        <span class="summary-sep">·</span>
+        <span><strong id="weekTotal">0h 00m</strong> week</span>
+      </div>
+      <div class="menu-wrap">
+        <button type="button" class="ghost" id="dataMenuBtn">Data</button>
+        <div class="menu" id="dataMenu" hidden>
+          <button type="button" id="downloadDbBtn">Download backup</button>
+          <button type="button" id="uploadDbBtn">Upload backup</button>
+          <button type="button" class="danger quiet" id="clearDbBtn">Clear all data</button>
+        </div>
+        <input id="uploadDbInput" type="file" accept="application/json,.json" hidden />
+      </div>
+    </header>
 
-  <div class="running-hero" id="runningHero" hidden></div>
+    <div class="running-hero" id="runningHero" hidden></div>
+  </div>
 
   <div class="controls" id="startControls">
-    <input id="taskName" type="text" placeholder="Enter task name..." autocomplete="off" />
-    <div class="duration-fields">
+    <div class="name-field">
+      <input id="taskName" type="text" placeholder="Task name" autocomplete="off" />
+      <div class="suggest" id="nameSuggest" hidden></div>
+    </div>
+    <div class="duration-fields" id="durationFields" hidden>
       <input id="taskHours" type="number" min="0" step="1" placeholder="h" aria-label="Hours" />
       <input id="taskMinutes" type="number" min="0" max="59" step="1" placeholder="m" aria-label="Minutes" />
     </div>
-    <button type="button" class="primary" id="startBtn" disabled>Start Task</button>
-    <button type="button" id="logBtn" disabled title="Save this task with hours, without starting a timer">Log hours</button>
+    <button type="button" class="primary" id="startBtn" disabled>Start</button>
+    <button type="button" class="primary" id="logBtn" hidden disabled title="Save this task with hours, without starting a timer">Log hours</button>
+    <button type="button" class="text-btn" id="logToggle">Log hours</button>
   </div>
 
-  <div class="recent" id="recentTasks" hidden></div>
-
-  <div class="stats">
-    <div class="stat">
-      <div class="label">Selected day</div>
-      <div class="value" id="dayTotal">0h 00m</div>
-      <div class="stat-bar"><span id="dayBar"></span></div>
-      <div class="stat-meta" id="dayMeta"></div>
-    </div>
-    <div class="stat">
-      <div class="label">Tasks</div>
-      <div class="value" id="taskCount">0</div>
-    </div>
-    <div class="stat">
-      <div class="label">Week (Mon–Sat)</div>
-      <div class="value" id="weekTotal">0h 00m</div>
-      <div class="stat-bar"><span id="weekBar"></span></div>
-      <div class="stat-meta" id="weekMeta"></div>
-    </div>
-  </div>
-
-  <div class="banner" id="viewingBanner" hidden></div>
-
-  <div class="section-head">
-    <h2>Tasks for <span id="dateTitle"></span></h2>
-    <div class="date-nav">
-      <button type="button" id="prevDay" aria-label="Previous day">‹</button>
-      <input id="selectedDate" type="date" />
-      <button type="button" id="nextDay" aria-label="Next day">›</button>
-      <button type="button" id="todayBtn">Today</button>
-    </div>
-  </div>
-  <div class="task-list" id="taskList"></div>
-
-  <div class="section-head">
-    <h2>Workweek <span class="week-range" id="weekRange"></span></h2>
+  <div class="section-head week-head">
+    <h2>Week <span class="week-range" id="weekRange" title="Weekly total uses Monday through Saturday. A task crossing midnight is split at midnight, so each date gets only the time actually worked on that date."></span></h2>
     <div class="week-nav">
       <button type="button" id="prevWeek" aria-label="Previous week">‹</button>
+      <input id="selectedDate" type="date" aria-label="Jump to date" />
       <button type="button" id="nextWeek" aria-label="Next week">›</button>
+      <button type="button" id="todayBtn">Today</button>
     </div>
   </div>
   <div class="week" id="weekGrid"></div>
 
   <div class="section-head">
-    <h2>EOD table <span class="week-range" id="eodDateLabel"></span></h2>
-    <div class="week-nav">
-      <button type="button" id="loadEodBtn" title="Reload this table from tracked tasks for the selected date">Load</button>
-      <button type="button" id="addEodRowBtn">Add row</button>
-      <button type="button" class="primary" id="copyEodBtn">Copy rows</button>
+    <div class="section-copy">
+      <h2 id="dateTitle"></h2>
+      <p class="banner" id="viewingBanner" hidden></p>
     </div>
   </div>
-  <div class="eod-wrap">
-    <table class="eod-table">
-      <thead>
-        <tr>
-          <th>Task name</th>
-          <th class="hrs">Hrs</th>
-        </tr>
-      </thead>
-      <tbody id="eodBody"></tbody>
-    </table>
-    <div class="eod-foot">
-      <span class="eod-hint">Scratch table for Teams. Edits stay on this page and are not saved.</span>
-      <div class="eod-total">Total <strong id="eodTotal">0</strong> hrs</div>
-    </div>
-  </div>
+  <div class="task-list" id="taskList"></div>
 
-  <footer class="footer">
-    <p class="notice">
-      Weekly total uses Monday through Saturday. A task crossing midnight is split at midnight,
-      so each date gets only the time actually worked on that date.
-    </p>
-    <div class="data-actions">
-      <button type="button" class="ghost" id="downloadDbBtn">Download backup</button>
-      <button type="button" class="ghost" id="uploadDbBtn">Upload backup</button>
-      <input id="uploadDbInput" type="file" accept="application/json,.json" hidden />
-      <button type="button" class="danger quiet" id="clearDbBtn">Clear all data</button>
+  <div class="eod-section" id="eodSection">
+    <div class="section-head">
+      <button type="button" class="eod-toggle" id="eodToggle" aria-expanded="false">
+        <span class="eod-caret" aria-hidden="true">›</span>
+        EOD
+        <span class="week-range" id="eodDateLabel"></span>
+        <span class="eod-dirty" id="eodDirty" hidden>edited</span>
+        <span class="eod-head-total">· <strong id="eodTotal">0</strong> hrs</span>
+      </button>
+      <div class="week-nav">
+        <button type="button" class="text-btn" id="copyEodBtn">Copy</button>
+      </div>
     </div>
-  </footer>
+    <div class="eod-wrap" id="eodWrap" hidden>
+      <div class="eod-toolbar">
+        <span class="eod-hint">Scratch table for Teams. Edits stay on this page and are not saved.</span>
+        <div class="eod-toolbar-actions">
+          <button type="button" id="loadEodBtn" hidden title="Reload this table from tracked tasks for the selected date">Reset</button>
+          <button type="button" id="addEodRowBtn">Add row</button>
+        </div>
+      </div>
+      <table class="eod-table">
+        <thead>
+          <tr>
+            <th>Task name</th>
+            <th class="hrs">Hrs</th>
+          </tr>
+        </thead>
+        <tbody id="eodBody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <div class="modal" id="editModal">

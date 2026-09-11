@@ -62,6 +62,7 @@ function resetTaskInputs() {
   $("taskHours").value = "";
   $("taskMinutes").value = "";
   clearTaskInputErrors();
+  hideNameSuggest();
 }
 
 async function startTask(presetName) {
@@ -146,7 +147,7 @@ async function logTask(presetName) {
 }
 
 function submitTaskFromKeyboard() {
-  if (hasDurationInput()) logTask();
+  if (isLogMode() || hasDurationInput()) logTask();
   else startTask();
 }
 
@@ -259,6 +260,7 @@ async function removeTask(id) {
 
 async function clearDb() {
   if (!state.dbReady) return;
+  $("dataMenu").hidden = true;
   const ok = await askConfirm({
     title: "Clear all data",
     message: "Delete ALL tracked tasks from IndexedDB? This cannot be undone.",
@@ -276,6 +278,7 @@ function backupFilename() {
 
 async function downloadDb() {
   if (!state.dbReady) return;
+  $("dataMenu").hidden = true;
   const tasks = await getAllTasks();
   const payload = {
     app: "task-tracker",
@@ -349,6 +352,7 @@ function parseBackup(raw) {
 
 function chooseBackupFile() {
   if (!state.dbReady) return;
+  $("dataMenu").hidden = true;
   $("uploadDbInput").value = "";
   $("uploadDbInput").click();
 }
@@ -383,8 +387,47 @@ async function uploadDb(file) {
 
 $("startBtn").addEventListener("click", () => submitTaskFromKeyboard());
 $("logBtn").addEventListener("click", () => logTask());
+$("logToggle").addEventListener("click", () => {
+  const next = !isLogMode();
+  setLogMode(next);
+  if (next) $("taskHours").focus();
+  else $("taskName").focus();
+});
 $("taskName").addEventListener("keydown", e => {
+  const open = !$("nameSuggest").hidden;
+  if (open && e.key === "ArrowDown") {
+    e.preventDefault();
+    moveSuggestHighlight(1);
+    return;
+  }
+  if (open && e.key === "ArrowUp") {
+    e.preventDefault();
+    moveSuggestHighlight(-1);
+    return;
+  }
+  if (open && e.key === "Enter" && activeSuggestedName()) {
+    e.preventDefault();
+    applySuggestedName(activeSuggestedName());
+    return;
+  }
+  if (e.key === "Escape") {
+    hideNameSuggest();
+    return;
+  }
   if (e.key === "Enter") submitTaskFromKeyboard();
+});
+$("taskName").addEventListener("focus", showNameSuggest);
+$("taskName").addEventListener("input", () => {
+  $("taskName").classList.remove("input-error");
+  showNameSuggest();
+});
+$("nameSuggest").addEventListener("mousedown", e => {
+  if (e.target.closest("[data-name]")) e.preventDefault();
+});
+$("nameSuggest").addEventListener("click", e => {
+  const item = e.target.closest("[data-name]");
+  if (!item) return;
+  applySuggestedName(item.dataset.name);
 });
 $("taskHours").addEventListener("keydown", e => {
   if (e.key === "Enter") submitTaskFromKeyboard();
@@ -392,33 +435,20 @@ $("taskHours").addEventListener("keydown", e => {
 $("taskMinutes").addEventListener("keydown", e => {
   if (e.key === "Enter") submitTaskFromKeyboard();
 });
-$("taskName").addEventListener("input", () => {
-  $("taskName").classList.remove("input-error");
-});
 $("taskHours").addEventListener("input", () => {
   $("taskHours").classList.remove("input-error");
   $("taskMinutes").classList.remove("input-error");
-  syncRecentChipState();
 });
 $("taskMinutes").addEventListener("input", () => {
   $("taskHours").classList.remove("input-error");
   $("taskMinutes").classList.remove("input-error");
-  syncRecentChipState();
 });
 $("selectedDate").addEventListener("change", render);
-$("prevDay").addEventListener("click", () => shiftSelectedDate(-1));
-$("nextDay").addEventListener("click", () => shiftSelectedDate(1));
 $("prevWeek").addEventListener("click", () => shiftSelectedDate(-7));
 $("nextWeek").addEventListener("click", () => shiftSelectedDate(7));
 $("todayBtn").addEventListener("click", () => {
   $("selectedDate").value = localDateString();
   render();
-});
-$("recentTasks").addEventListener("click", e => {
-  const chip = e.target.closest("[data-name]");
-  if (!chip || chip.disabled) return;
-  if (hasDurationInput()) logTask(chip.dataset.name);
-  else startTask(chip.dataset.name);
 });
 $("weekGrid").addEventListener("click", e => {
   const card = e.target.closest("[data-date]");
@@ -426,11 +456,19 @@ $("weekGrid").addEventListener("click", e => {
   $("selectedDate").value = card.dataset.date;
   render();
 });
+$("eodToggle").addEventListener("click", () => {
+  $("eodWrap").hidden = !$("eodWrap").hidden;
+  syncEodChrome();
+});
 $("loadEodBtn").addEventListener("click", loadEodFromDb);
 $("addEodRowBtn").addEventListener("click", addEodRow);
 $("copyEodBtn").addEventListener("click", copyEodRows);
 $("eodBody").addEventListener("input", onEodFieldInput);
 $("eodBody").addEventListener("focusout", onEodHoursBlur);
+$("dataMenuBtn").addEventListener("click", e => {
+  e.stopPropagation();
+  $("dataMenu").hidden = !$("dataMenu").hidden;
+});
 $("clearDbBtn").addEventListener("click", clearDb);
 $("downloadDbBtn").addEventListener("click", downloadDb);
 $("uploadDbBtn").addEventListener("click", chooseBackupFile);
@@ -445,6 +483,14 @@ $("editModal").addEventListener("click", e => {
 });
 
 document.addEventListener("click", e => {
+  if (!e.target.closest("#dataMenu") && !e.target.closest("#dataMenuBtn")) {
+    $("dataMenu").hidden = true;
+  }
+  if (!e.target.closest(".name-field")) hideNameSuggest();
+  if (!e.target.closest(".task-more")) {
+    document.querySelectorAll(".task-more[open]").forEach(el => el.removeAttribute("open"));
+  }
+
   const btn = e.target.closest("[data-action]");
   if (!btn || btn.disabled) return;
   const { action, id } = btn.dataset;
@@ -456,6 +502,13 @@ document.addEventListener("click", e => {
   if (action === "eod-split") splitEodHours(Number(btn.dataset.index));
   if (action === "eod-delete") deleteEodRow(Number(btn.dataset.index));
 });
+
+document.addEventListener("toggle", e => {
+  if (!e.target.matches(".task-more") || !e.target.open) return;
+  document.querySelectorAll(".task-more[open]").forEach(el => {
+    if (el !== e.target) el.removeAttribute("open");
+  });
+}, true);
 
 function bindEditKeys(id) {
   $(id).addEventListener("keydown", e => {
