@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <h1>Task Tracker</h1>
+    <div class="subtitle">Track your work locally in IndexedDB. Nothing is sent to a server.</div>
+  </header>
+
+  <div class="running-hero" id="runningHero" hidden></div>
+
+  <div class="controls" id="startControls">
+    <input id="taskName" type="text" placeholder="Enter task name..." autocomplete="off" />
+    <button class="primary" id="startBtn">Start Task</button>
+  </div>
+
+  <div class="recent" id="recentTasks" hidden></div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="label">Selected day</div>
+      <div class="value" id="dayTotal">0h 00m</div>
+      <div class="stat-bar"><span id="dayBar"></span></div>
+      <div class="stat-meta" id="dayMeta"></div>
+    </div>
+    <div class="stat">
+      <div class="label">Tasks</div>
+      <div class="value" id="taskCount">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">Week (Mon–Sat)</div>
+      <div class="value" id="weekTotal">0h 00m</div>
+      <div class="stat-bar"><span id="weekBar"></span></div>
+      <div class="stat-meta" id="weekMeta"></div>
+    </div>
+  </div>
+
+  <div class="banner" id="viewingBanner" hidden></div>
+
+  <div class="section-head">
+    <h2>Tasks for <span id="dateTitle"></span></h2>
+    <div class="date-nav">
+      <button type="button" id="prevDay" aria-label="Previous day">‹</button>
+      <input id="selectedDate" type="date" />
+      <button type="button" id="nextDay" aria-label="Next day">›</button>
+      <button type="button" id="todayBtn">Today</button>
+    </div>
+  </div>
+  <div class="task-list" id="taskList"></div>
+
+  <div class="section-head">
+    <h2>Workweek <span class="week-range" id="weekRange"></span></h2>
+    <div class="week-nav">
+      <button type="button" id="prevWeek" aria-label="Previous week">‹</button>
+      <button type="button" id="nextWeek" aria-label="Next week">›</button>
+    </div>
+  </div>
+  <div class="week" id="weekGrid"></div>
+
+  <div class="section-head">
+    <h2>EOD table <span class="week-range" id="eodDateLabel"></span></h2>
+    <div class="week-nav">
+      <button type="button" id="addEodRowBtn">Add row</button>
+      <button type="button" class="primary" id="copyEodBtn">Copy rows</button>
+    </div>
+  </div>
+  <div class="eod-wrap">
+    <table class="eod-table">
+      <thead>
+        <tr>
+          <th>Task name</th>
+          <th class="hrs">Hrs</th>
+        </tr>
+      </thead>
+      <tbody id="eodBody"></tbody>
+    </table>
+    <div class="eod-foot">
+      <span class="eod-hint">Scratch table for Teams. Edits stay on this page and are not saved.</span>
+      <div class="eod-total">Total <strong id="eodTotal">0</strong> hrs</div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p class="notice">
+      Weekly total uses Monday through Saturday. A task crossing midnight is split at midnight,
+      so each date gets only the time actually worked on that date.
+    </p>
+    <div class="data-actions">
+      <button type="button" class="ghost" id="downloadDbBtn">Download backup</button>
+      <button type="button" class="ghost" id="uploadDbBtn">Upload backup</button>
+      <input id="uploadDbInput" type="file" accept="application/json,.json" hidden />
+      <button type="button" class="danger quiet" id="clearDbBtn">Clear all data</button>
+    </div>
+  </footer>
+</div>
+
+<div class="modal" id="editModal">
+  <div class="dialog">
+    <h3>Edit task</h3>
+    <div class="dialog-name">
+      <label for="editName">Task name</label>
+      <input id="editName" type="text" placeholder="Enter task name..." />
+    </div>
+    <div class="dialog-fields">
+      <div>
+        <label for="editHours">Hours</label>
+        <input id="editHours" type="number" min="0" step="1" placeholder="0" />
+      </div>
+      <div>
+        <label for="editMinutes">Minutes</label>
+        <input id="editMinutes" type="number" min="0" max="59" step="1" placeholder="0" />
+      </div>
+    </div>
+    <p class="dialog-error" id="editError" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="cancelEdit">Cancel</button>
+      <button type="button" class="primary" id="saveEdit">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="confirmModal">
+  <div class="dialog">
+    <h3 id="confirmTitle">Confirm</h3>
+    <p class="dialog-copy" id="confirmMessage"></p>
+    <div class="dialog-actions">
+      <button type="button" id="confirmCancel">Cancel</button>
+      <button type="button" class="danger" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/time.js"></script>
+<script src="js/state.js"></script>
+<script src="js/db.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
