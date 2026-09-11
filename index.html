@@ -20,7 +20,12 @@
 
   <div class="controls" id="startControls">
     <input id="taskName" type="text" placeholder="Enter task name..." autocomplete="off" />
+    <div class="duration-fields">
+      <input id="taskHours" type="number" min="0" step="1" placeholder="h" aria-label="Hours" />
+      <input id="taskMinutes" type="number" min="0" max="59" step="1" placeholder="m" aria-label="Minutes" />
+    </div>
     <button class="primary" id="startBtn">Start Task</button>
+    <button type="button" id="logBtn" title="Save this task with hours, without starting a timer">Log hours</button>
   </div>
 
   <div class="recent" id="recentTasks" hidden></div>
@@ -69,6 +74,7 @@
   <div class="section-head">
     <h2>EOD table <span class="week-range" id="eodDateLabel"></span></h2>
     <div class="week-nav">
+      <button type="button" id="loadEodBtn" title="Reload this table from tracked tasks for the selected date">Load</button>
       <button type="button" id="addEodRowBtn">Add row</button>
       <button type="button" class="primary" id="copyEodBtn">Copy rows</button>
     </div>

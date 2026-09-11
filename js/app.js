@@ -9,11 +9,43 @@ function shiftSelectedDate(days) {
   render();
 }
 
+function clearTaskInputErrors() {
+  $("taskName").classList.remove("input-error");
+  $("taskHours").classList.remove("input-error");
+  $("taskMinutes").classList.remove("input-error");
+}
+
+function markTaskInputError(...ids) {
+  for (const id of ids) $(id).classList.add("input-error");
+  $(ids[0]).focus();
+}
+
+function hasDurationInput() {
+  return $("taskHours").value !== "" || $("taskMinutes").value !== "";
+}
+
+function readLogDuration() {
+  const hours = parseTimeField($("taskHours").value);
+  const minutes = parseTimeField($("taskMinutes").value);
+  if (!Number.isFinite(hours) || hours < 0 || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) {
+    return { error: true };
+  }
+  const ms = hours * 3600000 + minutes * 60000;
+  if (ms <= 0) return { error: true };
+  return { ms };
+}
+
+function resetTaskInputs() {
+  $("taskName").value = "";
+  $("taskHours").value = "";
+  $("taskMinutes").value = "";
+  clearTaskInputErrors();
+}
+
 async function startTask(presetName) {
   const name = (typeof presetName === "string" ? presetName : $("taskName").value).trim();
   if (!name) {
-    $("taskName").classList.add("input-error");
-    $("taskName").focus();
+    markTaskInputError("taskName");
     return;
   }
 
@@ -30,11 +62,43 @@ async function startTask(presetName) {
   };
 
   await putTask(task);
-  $("taskName").value = "";
-  $("taskName").classList.remove("input-error");
+  resetTaskInputs();
   $("selectedDate").value = localDateString();
   window.scrollTo({ top: 0 });
   await refresh();
+}
+
+async function logTask(presetName) {
+  const name = (typeof presetName === "string" ? presetName : $("taskName").value).trim();
+  if (!name) {
+    markTaskInputError("taskName");
+    return;
+  }
+
+  const duration = readLogDuration();
+  if (duration.error) {
+    markTaskInputError("taskHours", "taskMinutes");
+    return;
+  }
+
+  const now = Date.now();
+  const task = {
+    id: crypto.randomUUID(),
+    name,
+    date: selectedDate(),
+    startedAt: null,
+    stoppedAt: now,
+    manualDurationMs: duration.ms
+  };
+
+  await putTask(task);
+  resetTaskInputs();
+  await refresh();
+}
+
+function submitTaskFromKeyboard() {
+  if (hasDurationInput()) logTask();
+  else startTask();
 }
 
 async function stopTask(id) {
@@ -248,11 +312,26 @@ async function uploadDb(file) {
 }
 
 $("startBtn").addEventListener("click", () => startTask());
+$("logBtn").addEventListener("click", () => logTask());
 $("taskName").addEventListener("keydown", e => {
-  if (e.key === "Enter") startTask();
+  if (e.key === "Enter") submitTaskFromKeyboard();
+});
+$("taskHours").addEventListener("keydown", e => {
+  if (e.key === "Enter") submitTaskFromKeyboard();
+});
+$("taskMinutes").addEventListener("keydown", e => {
+  if (e.key === "Enter") submitTaskFromKeyboard();
 });
 $("taskName").addEventListener("input", () => {
   $("taskName").classList.remove("input-error");
+});
+$("taskHours").addEventListener("input", () => {
+  $("taskHours").classList.remove("input-error");
+  $("taskMinutes").classList.remove("input-error");
+});
+$("taskMinutes").addEventListener("input", () => {
+  $("taskHours").classList.remove("input-error");
+  $("taskMinutes").classList.remove("input-error");
 });
 $("selectedDate").addEventListener("change", render);
 $("prevDay").addEventListener("click", () => shiftSelectedDate(-1));
@@ -265,7 +344,9 @@ $("todayBtn").addEventListener("click", () => {
 });
 $("recentTasks").addEventListener("click", e => {
   const chip = e.target.closest("[data-name]");
-  if (chip && !chip.disabled) startTask(chip.dataset.name);
+  if (!chip || chip.disabled) return;
+  if (hasDurationInput()) logTask(chip.dataset.name);
+  else startTask(chip.dataset.name);
 });
 $("weekGrid").addEventListener("click", e => {
   const card = e.target.closest("[data-date]");
@@ -273,6 +354,7 @@ $("weekGrid").addEventListener("click", e => {
   $("selectedDate").value = card.dataset.date;
   render();
 });
+$("loadEodBtn").addEventListener("click", loadEodFromDb);
 $("addEodRowBtn").addEventListener("click", addEodRow);
 $("copyEodBtn").addEventListener("click", copyEodRows);
 $("eodBody").addEventListener("input", onEodFieldInput);

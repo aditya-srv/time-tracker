@@ -120,21 +120,21 @@ function render() {
     banner.textContent = "";
   } else {
     banner.hidden = false;
-    banner.textContent = `Viewing ${formatDate(date)}. New tasks still start today.`;
+    banner.textContent = `Viewing ${formatDate(date)}. Start still tracks today. Logged hours are saved to this date.`;
   }
 
   const todayBtn = $("todayBtn");
   todayBtn.disabled = date === today;
   todayBtn.classList.toggle("is-current", date === today);
 
-  renderRecent(Boolean(running));
+  renderRecent();
   renderRunningHero(running);
   renderTasks(visible, date, Boolean(running));
   renderWeek(date, today);
   syncAndRenderEod(date);
 }
 
-function renderRecent(isRunning) {
+function renderRecent() {
   const names = recentNames();
   const el = $("recentTasks");
   if (!names.length) {
@@ -145,7 +145,7 @@ function renderRecent(isRunning) {
 
   el.hidden = false;
   el.innerHTML = `<span class="recent-label">Recent</span>` + names.map(name => `
-    <button type="button" class="chip" data-name="${escapeHtml(name)}" ${isRunning ? "disabled" : ""}>
+    <button type="button" class="chip" data-name="${escapeHtml(name)}">
       ${escapeHtml(name)}
     </button>
   `).join("");
@@ -182,7 +182,7 @@ function renderTasks(visible, date, isBusy) {
     $("taskList").innerHTML = `
       <div class="empty">
         <strong>No tracked work for this date.</strong>
-        Start a task above to begin tracking.
+        Start a task or log hours above.
       </div>`;
     return;
   }
@@ -191,8 +191,9 @@ function renderTasks(visible, date, isBusy) {
     const isRunning = t.stoppedAt == null && t.manualDurationMs == null;
     const ms = daySegmentMs(t, date);
     const isManual = t.manualDurationMs != null;
-    const start = t.startedAt ? new Date(t.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Manual";
+    const start = t.startedAt ? new Date(t.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Logged";
     const end = t.stoppedAt ? new Date(t.stoppedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : (isRunning ? "Running" : "—");
+    const timeRange = t.startedAt ? `${start} → ${end}` : "Logged";
     const editable = t.manualDurationMs != null || t.stoppedAt != null;
 
     return `
@@ -203,7 +204,7 @@ function renderTasks(visible, date, isBusy) {
               ${isRunning ? `<span class="status">● Running</span>` : ""}
               ${isManual ? `<span class="badge">Manual</span>` : ""}
             </div>
-            <div class="task-time">${start} → ${end}</div>
+            <div class="task-time">${timeRange}</div>
           </div>
           <div class="task-duration" data-running-id="${isRunning ? t.id : ""}">${isRunning ? formatClock(ms) : formatDuration(ms)}</div>
         </div>
@@ -375,6 +376,17 @@ function renderEodTable() {
   }).join("");
 
   updateEodTotal();
+}
+
+async function loadEodFromDb() {
+  flushEodHoursInput();
+  const date = selectedDate();
+  state.tasks = await getAllTasks();
+  state.eod.date = date;
+  state.eod.dirty = false;
+  state.eod.rows = buildEodRows(date);
+  delete state.eodDrafts[date];
+  render();
 }
 
 function addEodRow() {

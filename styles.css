@@ -47,6 +47,20 @@ input { padding: 10px 12px; outline: none; }
 input:focus { border-color: var(--accent); }
 input.input-error { border-color: var(--red); }
 #taskName { min-width: 220px; flex: 1; }
+.duration-fields {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#taskHours,
+#taskMinutes {
+  width: 64px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+#logBtn { white-space: nowrap; }
 .controls.is-tracking #taskName,
 .controls.is-tracking #startBtn { opacity: 0.55; }
 input[type="date"] { color-scheme: dark; }
